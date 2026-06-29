@@ -207,8 +207,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 const SizedBox(height: 16),
                 _ActionTile(
                   icon: Icons.lock_rounded,
-                  title: '加密导出',
-                  subtitle: '用密码生成本地备份文件',
+                  title: '备份导出',
+                  subtitle: '用密码加密保存当前数据',
                   onTap: () async {
                     Navigator.pop(sheetContext);
                     await _exportEncryptedBackup(context);
@@ -216,8 +216,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
                 _ActionTile(
                   icon: Icons.lock_open_rounded,
-                  title: '解密导入',
-                  subtitle: '选择备份文件并输入密码恢复',
+                  title: '备份恢复',
+                  subtitle: '选择备份文件并输入密码',
                   onTap: () async {
                     Navigator.pop(sheetContext);
                     await _importEncryptedBackup(context);
@@ -235,56 +235,108 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final password = await _askPassword(
       context,
       title: '设置备份密码',
-      confirmLabel: '导出',
-      helperText: '请牢记密码，忘记后无法解密备份。',
+      confirmLabel: '导出备份',
+      helperText: '备份文件会用此密码加密保存。请妥善记录，忘记后无法恢复。',
     );
     if (password == null || !context.mounted) return;
 
+    var progressDialogShown = false;
+
+    void showProgress(String message) {
+      if (!context.mounted) return;
+      progressDialogShown = true;
+      _showBlockingProgress(context, message);
+    }
+
+    void hideProgress() {
+      if (!progressDialogShown || !context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      progressDialogShown = false;
+    }
+
     try {
       final accounts = context.read<AccountProvider>().accounts;
-      final encrypted = _backupCodec.encode(
+      final stamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final fileName = 'asset_book_$stamp.assetbook';
+      final destination = await chooseBackupFileDestination(fileName: fileName);
+      if (destination == null || !context.mounted) return;
+
+      showProgress('正在生成加密备份...');
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      final encrypted = await _backupCodec.encodeAsync(
         accounts: accounts,
         password: password,
       );
-      final stamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-      await downloadBackupFile(
-        fileName: 'asset_book_$stamp.assetbook',
-        contents: encrypted,
+      final saveResult = await destination.write(encrypted);
+      hideProgress();
+      if (!context.mounted || saveResult.cancelled) return;
+      final message = saveResult.path != null
+          ? '备份已导出：${saveResult.path}'
+          : saveResult.selectedLocation
+              ? '备份已导出：${saveResult.fileName}'
+              : '备份已开始下载：${saveResult.fileName}';
+      _showSnack(context, message);
+      await _showInfoDialog(
+        context,
+        title: '导出完成',
+        message: message,
       );
-      if (context.mounted) _showSnack(context, '已导出加密备份');
     } catch (error) {
+      hideProgress();
       if (context.mounted) _showSnack(context, error.toString());
     }
   }
 
   Future<void> _importEncryptedBackup(BuildContext context) async {
+    var progressDialogShown = false;
+
+    void showProgress(String message) {
+      if (!context.mounted) return;
+      progressDialogShown = true;
+      _showBlockingProgress(context, message);
+    }
+
+    void hideProgress() {
+      if (!progressDialogShown || !context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      progressDialogShown = false;
+    }
+
     try {
-      final raw = await pickBackupFileText();
+      final raw = await pickBackupFileText(
+        onFileSelected: () {
+          showProgress('正在读取备份文件...');
+        },
+      );
+      hideProgress();
       if (raw == null || !context.mounted) return;
 
       final password = await _askPassword(
         context,
-        title: '输入解密密码',
-        confirmLabel: '导入',
-        helperText: '导入会替换当前全部账户数据。',
+        title: '输入备份密码',
+        confirmLabel: '读取备份',
+        helperText: '请输入导出时设置的密码，验证后可恢复备份数据。',
       );
       if (password == null || !context.mounted) return;
 
-      final accounts = _backupCodec.decode(
-        encryptedText: raw,
-        password: password,
-      );
+      showProgress('正在验证密码并读取备份...');
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      final accounts = await _backupCodec.decodeAsync(
+          encryptedText: raw, password: password);
+      hideProgress();
+      if (!context.mounted) return;
       final ok = await _confirmDanger(
         context,
-        title: '确认导入',
-        message: '将用备份中的 ${accounts.length} 个账户替换当前全部账户，是否继续？',
-        confirmText: '导入',
+        title: '确认恢复备份',
+        message: '将用备份中的 ${accounts.length} 个账户替换当前全部账户数据。此操作不可撤销，是否继续？',
+        confirmText: '恢复',
       );
       if (ok != true || !context.mounted) return;
 
       await context.read<AccountProvider>().replaceAccounts(accounts);
-      if (context.mounted) _showSnack(context, '已导入 ${accounts.length} 个账户');
+      if (context.mounted) _showSnack(context, '已恢复 ${accounts.length} 个账户');
     } catch (error) {
+      hideProgress();
       if (context.mounted) _showSnack(context, error.toString());
     }
   }
@@ -367,6 +419,54 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(confirmText, style: TextStyle(color: colors.negative)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showBlockingProgress(BuildContext context, String message) {
+    final colors = context.assetBookColors;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(colors.accent),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(child: Text(message)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showInfoDialog(
+    BuildContext context, {
+    required String title,
+    required String message,
+  }) {
+    final colors = context.assetBookColors;
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('知道了', style: TextStyle(color: colors.accent)),
           ),
         ],
       ),

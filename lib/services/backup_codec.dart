@@ -46,13 +46,49 @@ class BackupCodec {
     });
   }
 
+  Future<String> encodeAsync({
+    required List<Account> accounts,
+    required String password,
+  }) async {
+    final normalizedPassword = password.trim();
+    if (normalizedPassword.length < 6) {
+      throw const FormatException('密码至少需要 6 位');
+    }
+
+    final salt = _randomBytes(16);
+    final key = await _deriveKeyAsync(normalizedPassword, salt);
+    final plainText = jsonEncode({
+      'version': version,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'accounts': accounts.map((account) => account.toMap()).toList(),
+    });
+    await Future<void>.delayed(Duration.zero);
+    final cipherBytes = _xorWithKeyStream(utf8.encode(plainText), key);
+    final cipherText = base64Encode(cipherBytes);
+    final saltText = base64Encode(salt);
+    final mac = _mac(key, '$saltText.$cipherText');
+
+    return jsonEncode({
+      'format': format,
+      'version': version,
+      'kdf': {
+        'name': 'sha256-iterated',
+        'iterations': _iterations,
+        'salt': saltText,
+      },
+      'cipher': 'sha256-hmac-stream-xor',
+      'ciphertext': cipherText,
+      'mac': mac,
+    });
+  }
+
   List<Account> decode({
     required String encryptedText,
     required String password,
   }) {
     final normalizedPassword = password.trim();
     if (normalizedPassword.isEmpty) {
-      throw const FormatException('请输入解密密码');
+      throw const FormatException('请输入备份密码');
     }
 
     final envelope = jsonDecode(encryptedText);
@@ -90,11 +126,68 @@ class BackupCodec {
         .toList();
   }
 
+  Future<List<Account>> decodeAsync({
+    required String encryptedText,
+    required String password,
+  }) async {
+    final normalizedPassword = password.trim();
+    if (normalizedPassword.isEmpty) {
+      throw const FormatException('请输入备份密码');
+    }
+
+    final envelope = jsonDecode(encryptedText);
+    if (envelope is! Map || envelope['format'] != format) {
+      throw const FormatException('备份文件格式不正确');
+    }
+
+    final kdf = envelope['kdf'];
+    if (kdf is! Map || kdf['salt'] is! String) {
+      throw const FormatException('备份文件缺少密钥信息');
+    }
+
+    final saltText = kdf['salt'] as String;
+    final cipherText = envelope['ciphertext'];
+    final expectedMac = envelope['mac'];
+    if (cipherText is! String || expectedMac is! String) {
+      throw const FormatException('备份文件内容不完整');
+    }
+
+    final key =
+        await _deriveKeyAsync(normalizedPassword, base64Decode(saltText));
+    final actualMac = _mac(key, '$saltText.$cipherText');
+    if (actualMac != expectedMac) {
+      throw const FormatException('密码错误或备份文件已损坏');
+    }
+
+    final plainBytes = _xorWithKeyStream(base64Decode(cipherText), key);
+    final payload = jsonDecode(utf8.decode(plainBytes));
+    if (payload is! Map || payload['accounts'] is! List) {
+      throw const FormatException('备份数据内容不正确');
+    }
+
+    return (payload['accounts'] as List)
+        .whereType<Map>()
+        .map((item) => Account.fromMap(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
   Uint8List _deriveKey(String password, List<int> salt) {
-    var digest = sha256.convert([...utf8.encode(password), ...salt]).bytes;
+    final passwordBytes = utf8.encode(password);
+    var digest = sha256.convert([...passwordBytes, ...salt]).bytes;
     for (var i = 0; i < _iterations; i++) {
-      digest =
-          sha256.convert([...digest, ...salt, ...utf8.encode(password)]).bytes;
+      digest = sha256.convert([...digest, ...salt, ...passwordBytes]).bytes;
+    }
+    return Uint8List.fromList(digest);
+  }
+
+  Future<Uint8List> _deriveKeyAsync(String password, List<int> salt) async {
+    final passwordBytes = utf8.encode(password);
+    var digest = sha256.convert([...passwordBytes, ...salt]).bytes;
+    for (var i = 0; i < _iterations; i++) {
+      digest = sha256.convert([...digest, ...salt, ...passwordBytes]).bytes;
+      if (i % 1000 == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
     }
     return Uint8List.fromList(digest);
   }
