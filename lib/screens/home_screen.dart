@@ -89,7 +89,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     slivers: [
                       _HeroNetWorth(provider: provider),
                       _SummaryRow(provider: provider),
-                      _LoanQuickActions(provider: provider),
                       _AccountSection(provider: provider),
                       const SliverToBoxAdapter(child: SizedBox(height: 120)),
                     ],
@@ -909,10 +908,10 @@ Future<void> _showBatchAccountSheet(
   );
 }
 
-class _LoanQuickActions extends StatelessWidget {
+class _LoanShortcutStrip extends StatelessWidget {
   final AccountProvider provider;
 
-  const _LoanQuickActions({required this.provider});
+  const _LoanShortcutStrip({required this.provider});
 
   @override
   Widget build(BuildContext context) {
@@ -925,74 +924,68 @@ class _LoanQuickActions extends StatelessWidget {
         .fold(0.0, (sum, account) => sum + account.balance.abs());
     final fmt = NumberFormat('#,##0.00');
 
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
-        child: Row(
-          children: [
-            Expanded(
-              child: _LoanActionCard(
-                title: '借出',
-                subtitle: '别人欠我的钱',
-                amount: _formatCurrency(fmt, lentTotal),
-                icon: Icons.north_east_rounded,
-                color: colors.positive,
-                onTap: () {
-                  final state =
-                      context.findAncestorStateOfType<_HomeScreenState>();
-                  state?._showForm(
-                    context,
-                    initialName: '',
-                    initialType: '借出款',
-                    initialBalance: null,
-                    initialIncludeInAssets: true,
-                    formTitle: '新增借出',
-                    balanceSign: 1,
-                  );
-                },
-              ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: _LoanShortcutChip(
+              title: '借出',
+              amount: _formatCurrency(fmt, lentTotal),
+              icon: Icons.north_east_rounded,
+              color: colors.positive,
+              onTap: () {
+                final state =
+                    context.findAncestorStateOfType<_HomeScreenState>();
+                state?._showForm(
+                  context,
+                  initialName: '',
+                  initialType: '借出款',
+                  initialBalance: null,
+                  initialIncludeInAssets: true,
+                  formTitle: '新增借出',
+                  balanceSign: 1,
+                );
+              },
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _LoanActionCard(
-                title: '借入',
-                subtitle: '我需要还的钱',
-                amount: _formatCurrency(fmt, borrowedTotal),
-                icon: Icons.south_west_rounded,
-                color: colors.negative,
-                onTap: () {
-                  final state =
-                      context.findAncestorStateOfType<_HomeScreenState>();
-                  state?._showForm(
-                    context,
-                    initialName: '',
-                    initialType: '借入款',
-                    initialBalance: null,
-                    initialIncludeInAssets: true,
-                    formTitle: '新增借入',
-                    balanceSign: -1,
-                  );
-                },
-              ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _LoanShortcutChip(
+              title: '借入',
+              amount: _formatCurrency(fmt, borrowedTotal),
+              icon: Icons.south_west_rounded,
+              color: colors.negative,
+              onTap: () {
+                final state =
+                    context.findAncestorStateOfType<_HomeScreenState>();
+                state?._showForm(
+                  context,
+                  initialName: '',
+                  initialType: '借入款',
+                  initialBalance: null,
+                  initialIncludeInAssets: true,
+                  formTitle: '新增借入',
+                  balanceSign: -1,
+                );
+              },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _LoanActionCard extends StatelessWidget {
+class _LoanShortcutChip extends StatelessWidget {
   final String title;
-  final String subtitle;
   final String amount;
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
 
-  const _LoanActionCard({
+  const _LoanShortcutChip({
     required this.title,
-    required this.subtitle,
     required this.amount,
     required this.icon,
     required this.color,
@@ -1009,61 +1002,50 @@ class _LoanActionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(14),
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           decoration: BoxDecoration(
             color: colors.card,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(11),
             border: Border.all(color: colors.border),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: Icon(icon, color: color, size: 19),
-                  ),
-                  const Spacer(),
-                  Icon(
-                    Icons.add_circle_outline_rounded,
-                    color: colors.textMuted,
-                    size: 18,
-                  ),
-                ],
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Icon(icon, color: color, size: 14),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(width: 8),
               Text(
                 title,
                 style: TextStyle(
                   color: colors.textPrimary,
-                  fontSize: 15,
+                  fontSize: 12,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: TextStyle(color: colors.textMuted, fontSize: 11),
-              ),
-              const SizedBox(height: 8),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  amount,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
+              const SizedBox(width: 6),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    amount,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
+              const SizedBox(width: 6),
+              Icon(Icons.add_rounded, color: colors.textMuted, size: 16),
             ],
           ),
         ),
@@ -1088,7 +1070,7 @@ class _AccountSection extends StatelessWidget {
     final fmt = NumberFormat('#,##0.00');
     final widgets = <Widget>[
       Padding(
-        padding: const EdgeInsets.fromLTRB(24, 32, 24, 14),
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 10),
         child: Row(
           children: [
             Text('账户列表',
@@ -1108,15 +1090,20 @@ class _AccountSection extends StatelessWidget {
           ],
         ),
       ),
+      _LoanShortcutStrip(provider: provider),
     ];
 
-    for (final account in accounts) {
-      widgets.add(_AccountCard(
+    for (final group in _groupAccountsByType(accounts)) {
+      widgets.add(_AccountTypeHeader(group: group));
+      for (final account in group.accounts) {
+        widgets.add(_AccountCard(
           account: account,
           onTap: () {
             final state = context.findAncestorStateOfType<_HomeScreenState>();
             state?._showForm(context, account: account);
-          }));
+          },
+        ));
+      }
     }
 
     return SliverList(
@@ -1124,6 +1111,102 @@ class _AccountSection extends StatelessWidget {
       (_, i) => widgets[i],
       childCount: widgets.length,
     ));
+  }
+
+  List<_AccountTypeGroup> _groupAccountsByType(List<Account> accounts) {
+    final grouped = <String, List<Account>>{};
+    for (final account in accounts) {
+      final type =
+          account.accountType.trim().isEmpty ? '未分类' : account.accountType;
+      grouped.putIfAbsent(type, () => <Account>[]).add(account);
+    }
+
+    final groups = grouped.entries
+        .map((entry) => _AccountTypeGroup(
+              type: entry.key,
+              accounts: entry.value,
+            ))
+        .toList();
+
+    groups.sort((a, b) {
+      final aIndex = presetAccountTypes.indexOf(a.type);
+      final bIndex = presetAccountTypes.indexOf(b.type);
+      if (aIndex >= 0 && bIndex >= 0) return aIndex.compareTo(bIndex);
+      if (aIndex >= 0) return -1;
+      if (bIndex >= 0) return 1;
+      return a.type.compareTo(b.type);
+    });
+
+    return groups;
+  }
+}
+
+class _AccountTypeGroup {
+  final String type;
+  final List<Account> accounts;
+
+  const _AccountTypeGroup({
+    required this.type,
+    required this.accounts,
+  });
+
+  double get total =>
+      accounts.fold(0.0, (sum, account) => sum + account.balance);
+}
+
+class _AccountTypeHeader extends StatelessWidget {
+  final _AccountTypeGroup group;
+
+  const _AccountTypeHeader({required this.group});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.assetBookColors;
+    final fmt = NumberFormat('#,##0.00');
+    final totalColor = group.total >= 0 ? colors.positive : colors.negative;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 6),
+      child: Row(
+        children: [
+          Container(
+            width: 6,
+            height: 18,
+            decoration: BoxDecoration(
+              color: totalColor.withValues(alpha: 0.75),
+              borderRadius: BorderRadius.circular(99),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            group.type,
+            style: TextStyle(
+              color: colors.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '${group.accounts.length} 个',
+            style: TextStyle(
+              color: colors.textMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            _formatCurrency(fmt, group.total),
+            style: TextStyle(
+              color: totalColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
